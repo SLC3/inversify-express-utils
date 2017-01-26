@@ -7,10 +7,10 @@ import { TYPE, METADATA_KEY } from "./constants";
  * Wrapper for the express server.
  */
 export class InversifyExpressServer  {
-    private container: inversify.interfaces.Container;
-    private app: express.Application = express();
-    private configFn: interfaces.ConfigFunction;
-    private errorConfigFn: interfaces.ConfigFunction;
+    protected container: inversify.interfaces.Container;
+    protected app: express.Application = express();
+    protected configFn: interfaces.ConfigFunction;
+    protected errorConfigFn: interfaces.ConfigFunction;
 
     /**
      * Wrapper for the express server.
@@ -66,36 +66,29 @@ export class InversifyExpressServer  {
         return this.app;
     }
 
-    private registerControllers() {
-
-        let controllers: interfaces.Controller[] = this.container.getAll<interfaces.Controller>(TYPE.Controller);
-
-        controllers.forEach((controller: interfaces.Controller) => {
-
-            let controllerMetadata: interfaces.ControllerMetadata = Reflect.getOwnMetadata(
-                METADATA_KEY.controller,
-                controller.constructor
-            );
-
-            let methodMetadata: interfaces.ControllerMethodMetadata[] = Reflect.getOwnMetadata(
-                METADATA_KEY.controllerMethod,
-                controller.constructor
-            );
-
-            if (controllerMetadata && methodMetadata) {
-                let router: express.Router = express.Router();
-
-                methodMetadata.forEach((metadata: interfaces.ControllerMethodMetadata) => {
-                    let handler: express.RequestHandler = this.handlerFactory(controllerMetadata.target.name, metadata.key);
-                    router[metadata.method](metadata.path, ...metadata.middleware, handler);
-                });
-
-                this.app.use(controllerMetadata.path, ...controllerMetadata.middleware, router);
-            }
-        });
+    protected registerController(controller: interfaces.Controller, controllerMetadata: interfaces.ControllerMetadata) {
+        this.attachMethodHandlers(controller, controllerMetadata);
     }
 
-    private handlerFactory(controllerName: any, key: string): express.RequestHandler {
+    protected attachMethodHandlers(controller: interfaces.Controller, controllerMetadata: interfaces.ControllerMetadata) {
+        let methodMetadata: interfaces.ControllerMethodMetadata[] = Reflect.getOwnMetadata(
+            METADATA_KEY.controllerMethod,
+            controller.constructor
+        );
+
+        if (controllerMetadata && methodMetadata) {
+            let router: express.Router = express.Router();
+
+            methodMetadata.forEach((metadata: interfaces.ControllerMethodMetadata) => {
+                let handler: express.RequestHandler = this.methodHandlerFactory(controllerMetadata.target.name, metadata.key);
+                router[metadata.method](metadata.path, ...metadata.middleware, handler);
+            });
+
+            this.app.use(controllerMetadata.path, ...controllerMetadata.middleware, router);
+        }
+    }
+
+    protected methodHandlerFactory(controllerName: any, key: string): express.RequestHandler {
         return (req: express.Request, res: express.Response, next: express.NextFunction) => {
             let result: any = this.container.getNamed(TYPE.Controller, controllerName)[key](req, res, next);
             // try to resolve promise
@@ -114,5 +107,20 @@ export class InversifyExpressServer  {
                 res.send(result);
             }
         };
+    }
+
+    private registerControllers() {
+
+        let controllers: interfaces.Controller[] = this.container.getAll<interfaces.Controller>(TYPE.Controller);
+
+        controllers.forEach((controller: interfaces.Controller) => {
+
+            let controllerMetadata: interfaces.ControllerMetadata = Reflect.getOwnMetadata(
+                METADATA_KEY.controller,
+                controller.constructor
+            );
+
+            this.registerController(controller, controllerMetadata);
+        });
     }
 }
